@@ -1,0 +1,78 @@
+# Multi-site PHP hosting for Coolify (Docker Compose build pack)
+#
+#   https://<name>.example.com  ->  ${SITES_PATH}/<name>   (host)  ->  /var/www/<name> (container)
+#   If /var/www/<name>/public exists, it is used as the document root (Laravel/Symfony style).
+#
+# In Coolify: set domains on the "web" service (comma separated), e.g.
+#   https://test-website.example.com,https://my-website.example.com
+# and on "phpmyadmin", e.g. https://pma.example.com
+#
+# SERVICE_PASSWORD_* / SERVICE_USER_* are Coolify "magic" variables: generated once and kept.
+
+services:
+  web:
+    build: ./docker/nginx
+    restart: unless-stopped
+    depends_on:
+      - php
+    volumes:
+      - ${SITES_PATH:-/srv/sites}:/var/www:ro
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/__health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  php:
+    build: ./docker/php
+    restart: unless-stopped
+    volumes:
+      - ${SITES_PATH:-/srv/sites}:/var/www
+    environment:
+      # Available to every site via getenv()
+      DB_HOST: mysql
+      DB_PORT: 3306
+      TZ: ${TZ:-UTC}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:9.7  # LTS
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SERVICE_PASSWORD_MYSQLROOT}
+      TZ: ${TZ:-UTC}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max_allowed_packet=256M
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    pull_policy: always
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 256M
+      MEMORY_LIMIT: 512M
+    expose:
+      - "80"
+
+volumes:
+  mysql-data:

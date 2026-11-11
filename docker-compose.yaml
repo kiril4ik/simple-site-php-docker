@@ -20,8 +20,8 @@ services:
     expose:
       - "80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/__health"]
-      interval: 30s
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/"]
+      interval: 10s
       timeout: 5s
       retries: 3
 
